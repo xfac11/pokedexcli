@@ -1,4 +1,4 @@
-package main
+package repl
 
 import (
 	"fmt"
@@ -32,7 +32,7 @@ func TestCleanInput(t *testing.T) {
 
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("Test %d", i+1), func(t *testing.T) {
-			actual := cleanInput(c.input)
+			actual := CleanInput(c.input)
 			if diff := cmp.Diff(c.expected, actual); diff != "" {
 				t.Errorf("%s", diff)
 			}

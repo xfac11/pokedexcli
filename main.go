@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+
+	"github.com/xfac11/pokedexcli/internal/repl"
 )
 
 type config struct {
@@ -63,7 +65,7 @@ func main() {
 		fmt.Print("Pokedex > ")
 		scanner.Scan()
 		text := scanner.Text()
-		cleaned := cleanInput(text)
+		cleaned := repl.CleanInput(text)
 		command, ok := getCommands()[cleaned[0]]
 		if !ok {
 			fmt.Printf("Unknown command: %s\n", cleaned)

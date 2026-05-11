@@ -1,10 +1,10 @@
-package main
+package repl
 
 import (
 	"strings"
 )
 
-func cleanInput(text string) []string {
+func CleanInput(text string) []string {
 	text = strings.ToLower(text)
 	cleaned := strings.Fields(text)
 
