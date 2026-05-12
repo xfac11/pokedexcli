@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/xfac11/pokedexcli/internal/pokecache"
 	"github.com/xfac11/pokedexcli/internal/repl"
 )
 
@@ -14,6 +16,7 @@ type config struct {
 	Next      string
 	Previous  string
 	FirstTime bool
+	Cache     *pokecache.Cache
 }
 type cliCommand struct {
 	name        string
@@ -60,6 +63,7 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	config := config{
 		FirstTime: true,
+		Cache:     pokecache.NewCache(time.Second * 5),
 	}
 	for {
 		fmt.Print("Pokedex > ")
@@ -106,9 +110,19 @@ func commandMap(c *config) error {
 	c.FirstTime = false
 
 	var location_areas locationAreaResponse
-	err := getLocationAreas(url, &location_areas)
-	if err != nil {
-		return nil
+	data, ok := c.Cache.Get(url)
+	if ok {
+		json.Unmarshal(data, &location_areas)
+	} else {
+		err := requestLocationAreas(url, &location_areas)
+		jsonData, err := json.Marshal(location_areas)
+		if err != nil {
+			return err
+		}
+		err = c.Cache.Add(url, jsonData)
+		if err != nil {
+			return err
+		}
 	}
 
 	for i := range 20 {
@@ -139,9 +153,19 @@ func commandMapb(c *config) error {
 	}
 	c.FirstTime = false
 	var location_areas locationAreaResponse
-	err := getLocationAreas(url, &location_areas)
-	if err != nil {
-		return err
+	data, ok := c.Cache.Get(url)
+	if ok {
+		json.Unmarshal(data, &location_areas)
+	} else {
+		err := requestLocationAreas(url, &location_areas)
+		jsonData, err := json.Marshal(location_areas)
+		if err != nil {
+			return err
+		}
+		err = c.Cache.Add(url, jsonData)
+		if err != nil {
+			return err
+		}
 	}
 
 	for i := range 20 {
@@ -162,7 +186,7 @@ func commandMapb(c *config) error {
 	return nil
 }
 
-func getLocationAreas(url string, locationAreas *locationAreaResponse) error {
+func requestLocationAreas(url string, locationAreas *locationAreaResponse) error {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
