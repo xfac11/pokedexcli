@@ -21,17 +21,56 @@ type config struct {
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(config *config) error
+	callback    func(config *config, args []string) error
 }
-type locationArea struct {
+type locationAreaSet struct {
+	Count    int                `json:"Count"`
+	Next     *string            `json:"next"`
+	Previous *string            `json:"previous"`
+	Results  []namedAPIResource `json:"results"`
+}
+
+type encounterVersionDetails struct {
+	Rate    int              `json:"rate"`
+	Version namedAPIResource `json:"version"`
+}
+type encounterMethodRate struct {
+	EncounterMethod namedAPIResource          `json:"encounter_method"`
+	VersionDetails  []encounterVersionDetails `json:"version_details"`
+}
+type name struct {
+	Name     string           `json:"name"`
+	Language namedAPIResource `json:"language"`
+}
+
+type namedAPIResource struct {
 	Name string `json:"name"`
 	Url  string `json:"url"`
 }
-type locationAreaResponse struct {
-	Count    int            `json:"Count"`
-	Next     *string        `json:"next"`
-	Previous *string        `json:"previous"`
-	Resulst  []locationArea `json:"results"`
+type encounter struct {
+	MinLevel        int                `json:"min_level"`
+	MaxLevel        int                `json:"max_level"`
+	ConditionValues []namedAPIResource `json:"condition_values"`
+	Chance          int                `json:"chance"`
+	Method          namedAPIResource   `json:"method"`
+}
+type versionEncounterDetail struct {
+	Version          namedAPIResource `json:"version"`
+	MaxChance        int              `json:"max_chance"`
+	EncounterDetails []encounter      `json:"encounter_details"`
+}
+type pokemonEncounter struct {
+	Pokemon        namedAPIResource         `json:"pokemon"`
+	VersionDetails []versionEncounterDetail `json:"version_details"`
+}
+type locationArea struct {
+	Id                   int                   `json:"id"`
+	Name                 string                `json:"name"`
+	GameIndex            int                   `json:"game_index"`
+	EncounterMethodRates []encounterMethodRate `json:"encounter_method_rates"`
+	Location             namedAPIResource      `json:"location"`
+	Names                []name                `json:"names"`
+	PokemonEncounters    []pokemonEncounter    `json:"pokemon_encounters"`
 }
 
 func getCommands() map[string]cliCommand {
@@ -56,6 +95,11 @@ func getCommands() map[string]cliCommand {
 			description: "Displays the previous 20 location areas. subsequent call to this command displays the previous 20 areas",
 			callback:    commandMapb,
 		},
+		"explore": {
+			name:        "explore",
+			description: "Displays the given areas possible encounters",
+			callback:    commandExplore,
+		},
 	}
 	return commandMap
 }
@@ -75,14 +119,14 @@ func main() {
 			fmt.Printf("Unknown command: %s\n", cleaned)
 			continue
 		}
-		err := command.callback(&config)
+		err := command.callback(&config, cleaned[1:])
 		if err != nil {
 			fmt.Println(err)
 		}
 	}
 }
 
-func commandHelp(c *config) error {
+func commandHelp(c *config, args []string) error {
 	fmt.Println("Welcome to the Pokedex!")
 	fmt.Printf("Usage:\n\n")
 	for key, value := range getCommands() {
@@ -91,25 +135,25 @@ func commandHelp(c *config) error {
 	return nil
 }
 
-func commandExit(c *config) error {
+func commandExit(c *config, args []string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandMap(c *config) error {
+func commandMap(c *config, args []string) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if c.Next != "" {
 		url = c.Next
 	}
 	if !c.FirstTime && c.Next == "" {
-		println("you're on the last page")
+		fmt.Println("you're on the last page")
 		return nil
 	}
 
 	c.FirstTime = false
 
-	var location_areas locationAreaResponse
+	var location_areas locationAreaSet
 	data, ok := c.Cache.Get(url)
 	if ok {
 		json.Unmarshal(data, &location_areas)
@@ -126,7 +170,7 @@ func commandMap(c *config) error {
 	}
 
 	for i := range 20 {
-		println(location_areas.Resulst[i].Name)
+		println(location_areas.Results[i].Name)
 	}
 	if location_areas.Next != nil {
 		c.Next = *location_areas.Next
@@ -142,17 +186,16 @@ func commandMap(c *config) error {
 	return nil
 }
 
-func commandMapb(c *config) error {
+func commandMapb(c *config, args []string) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if c.Previous != "" {
 		url = c.Previous
 	}
 	if c.Previous == "" {
-		println("you're on the first page")
+		fmt.Println("you're on the first page")
 		return nil
 	}
-	c.FirstTime = false
-	var location_areas locationAreaResponse
+	var location_areas locationAreaSet
 	data, ok := c.Cache.Get(url)
 	if ok {
 		json.Unmarshal(data, &location_areas)
@@ -169,7 +212,7 @@ func commandMapb(c *config) error {
 	}
 
 	for i := range 20 {
-		println(location_areas.Resulst[i].Name)
+		fmt.Println(location_areas.Results[i].Name)
 	}
 
 	if location_areas.Next != nil {
@@ -186,7 +229,57 @@ func commandMapb(c *config) error {
 	return nil
 }
 
-func requestLocationAreas(url string, locationAreas *locationAreaResponse) error {
+func commandExplore(c *config, args []string) error {
+	if args == nil {
+		return fmt.Errorf("Command explore requires a location area as argument. Got nil")
+	}
+	if len(args) == 0 || len(args) > 2 {
+		return fmt.Errorf("Command explore requires one location area as argument. Got zero or more")
+	}
+	fullUrl := "https://pokeapi.co/api/v2/location-area/" + args[0] + "/"
+	data, ok := c.Cache.Get(fullUrl)
+	var area locationArea
+	if !ok {
+		request, err := http.NewRequest("GET", fullUrl, nil)
+		if err != nil {
+			return err
+		}
+		client := http.Client{}
+		response, err := client.Do(request)
+		if err != nil {
+			return err
+		}
+		defer response.Body.Close()
+
+		decoder := json.NewDecoder(response.Body)
+		if decoder == nil {
+			return fmt.Errorf("Decoder was nil")
+		}
+
+		err = decoder.Decode(&area)
+		if err != nil {
+			return err
+		}
+
+		jsonData, err := json.Marshal(area)
+		if err != nil {
+			return err
+		}
+		err = c.Cache.Add(fullUrl, jsonData)
+		if err != nil {
+			return err
+		}
+	} else {
+		json.Unmarshal(data, &area)
+	}
+
+	for _, encounter := range area.PokemonEncounters {
+		fmt.Println(encounter.Pokemon.Name)
+	}
+
+	return nil
+}
+func requestLocationAreas(url string, locationAreas *locationAreaSet) error {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
