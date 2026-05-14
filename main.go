@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/xfac11/pokedexcli/internal/pokecache"
+	"github.com/xfac11/pokedexcli/internal/poketypes"
 	"github.com/xfac11/pokedexcli/internal/repl"
 )
 
@@ -17,60 +19,13 @@ type config struct {
 	Previous  string
 	FirstTime bool
 	Cache     *pokecache.Cache
+	Pokedex   map[string]poketypes.Pokemon
 }
+
 type cliCommand struct {
 	name        string
 	description string
 	callback    func(config *config, args []string) error
-}
-type locationAreaSet struct {
-	Count    int                `json:"Count"`
-	Next     *string            `json:"next"`
-	Previous *string            `json:"previous"`
-	Results  []namedAPIResource `json:"results"`
-}
-
-type encounterVersionDetails struct {
-	Rate    int              `json:"rate"`
-	Version namedAPIResource `json:"version"`
-}
-type encounterMethodRate struct {
-	EncounterMethod namedAPIResource          `json:"encounter_method"`
-	VersionDetails  []encounterVersionDetails `json:"version_details"`
-}
-type name struct {
-	Name     string           `json:"name"`
-	Language namedAPIResource `json:"language"`
-}
-
-type namedAPIResource struct {
-	Name string `json:"name"`
-	Url  string `json:"url"`
-}
-type encounter struct {
-	MinLevel        int                `json:"min_level"`
-	MaxLevel        int                `json:"max_level"`
-	ConditionValues []namedAPIResource `json:"condition_values"`
-	Chance          int                `json:"chance"`
-	Method          namedAPIResource   `json:"method"`
-}
-type versionEncounterDetail struct {
-	Version          namedAPIResource `json:"version"`
-	MaxChance        int              `json:"max_chance"`
-	EncounterDetails []encounter      `json:"encounter_details"`
-}
-type pokemonEncounter struct {
-	Pokemon        namedAPIResource         `json:"pokemon"`
-	VersionDetails []versionEncounterDetail `json:"version_details"`
-}
-type locationArea struct {
-	Id                   int                   `json:"id"`
-	Name                 string                `json:"name"`
-	GameIndex            int                   `json:"game_index"`
-	EncounterMethodRates []encounterMethodRate `json:"encounter_method_rates"`
-	Location             namedAPIResource      `json:"location"`
-	Names                []name                `json:"names"`
-	PokemonEncounters    []pokemonEncounter    `json:"pokemon_encounters"`
 }
 
 func getCommands() map[string]cliCommand {
@@ -100,6 +55,11 @@ func getCommands() map[string]cliCommand {
 			description: "Displays the given areas possible encounters",
 			callback:    commandExplore,
 		},
+		"catch": {
+			name:        "catch",
+			description: "Throws a pokeball and tries to catch the pokemon",
+			callback:    commandCatch,
+		},
 	}
 	return commandMap
 }
@@ -108,6 +68,7 @@ func main() {
 	config := config{
 		FirstTime: true,
 		Cache:     pokecache.NewCache(time.Second * 5),
+		Pokedex:   make(map[string]poketypes.Pokemon),
 	}
 	for {
 		fmt.Print("Pokedex > ")
@@ -153,7 +114,7 @@ func commandMap(c *config, args []string) error {
 
 	c.FirstTime = false
 
-	var location_areas locationAreaSet
+	var location_areas poketypes.LocationAreaSet
 	data, ok := c.Cache.Get(url)
 	if ok {
 		json.Unmarshal(data, &location_areas)
@@ -195,7 +156,7 @@ func commandMapb(c *config, args []string) error {
 		fmt.Println("you're on the first page")
 		return nil
 	}
-	var location_areas locationAreaSet
+	var location_areas poketypes.LocationAreaSet
 	data, ok := c.Cache.Get(url)
 	if ok {
 		json.Unmarshal(data, &location_areas)
@@ -238,13 +199,13 @@ func commandExplore(c *config, args []string) error {
 	}
 	fullUrl := "https://pokeapi.co/api/v2/location-area/" + args[0] + "/"
 	data, ok := c.Cache.Get(fullUrl)
-	var area locationArea
+	var area poketypes.LocationArea
 	if !ok {
 		request, err := http.NewRequest("GET", fullUrl, nil)
 		if err != nil {
 			return err
 		}
-		client := http.Client{}
+		client := &http.Client{}
 		response, err := client.Do(request)
 		if err != nil {
 			return err
@@ -279,7 +240,39 @@ func commandExplore(c *config, args []string) error {
 
 	return nil
 }
-func requestLocationAreas(url string, locationAreas *locationAreaSet) error {
+
+func commandCatch(c *config, args []string) error {
+	url := fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%s/", args[0])
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	decoder := json.NewDecoder(response.Body)
+	if decoder == nil {
+		return fmt.Errorf("Could not create decoder")
+	}
+	var pokemon poketypes.Pokemon
+	decoder.Decode(&pokemon)
+
+	fmt.Printf("Throwing a Pokeball at %s...", args[0])
+	if rand.Intn(int(float32(pokemon.BaseExperience)*0.1)) != 1 {
+		fmt.Printf("%s escaped!\n", args[0])
+		return nil
+	}
+
+	c.Pokedex[args[0]] = pokemon
+	fmt.Printf("%s was caught!\n", args[0])
+	return nil
+}
+
+func requestLocationAreas(url string, locationAreas *poketypes.LocationAreaSet) error {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
