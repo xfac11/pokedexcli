@@ -212,6 +212,10 @@ func commandExplore(c *config, args []string) error {
 		}
 		defer response.Body.Close()
 
+		if response.StatusCode != 200 {
+			return fmt.Errorf("No pokemon found with that name, status : %s", response.Status)
+		}
+
 		decoder := json.NewDecoder(response.Body)
 		if decoder == nil {
 			return fmt.Errorf("Decoder was nil")
@@ -243,26 +247,43 @@ func commandExplore(c *config, args []string) error {
 
 func commandCatch(c *config, args []string) error {
 	url := fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%s/", args[0])
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-
-	decoder := json.NewDecoder(response.Body)
-	if decoder == nil {
-		return fmt.Errorf("Could not create decoder")
-	}
 	var pokemon poketypes.Pokemon
-	decoder.Decode(&pokemon)
+	data, ok := c.Cache.Get(url)
+	if ok {
+		if err := json.Unmarshal(data, &pokemon); err != nil {
+			return err
+		}
+	} else {
+		request, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return err
+		}
+		client := &http.Client{}
+		response, err := client.Do(request)
+		if err != nil {
+			return err
+		}
+		defer response.Body.Close()
+
+		if response.StatusCode != 200 {
+			return fmt.Errorf("No pokemon found with that name, status : %s", response.Status)
+		}
+
+		decoder := json.NewDecoder(response.Body)
+		if decoder == nil {
+			return fmt.Errorf("Could not create decoder")
+		}
+
+		decoder.Decode(&pokemon)
+		if data, err := json.Marshal(&pokemon); err == nil {
+			c.Cache.Add(url, data)
+		} else {
+			return err
+		}
+	}
 
 	fmt.Printf("Throwing a Pokeball at %s...", args[0])
-	if rand.Intn(int(float32(pokemon.BaseExperience)*0.1)) != 1 {
+	if !tryCatch(pokemon.BaseExperience) {
 		fmt.Printf("%s escaped!\n", args[0])
 		return nil
 	}
@@ -270,6 +291,10 @@ func commandCatch(c *config, args []string) error {
 	c.Pokedex[args[0]] = pokemon
 	fmt.Printf("%s was caught!\n", args[0])
 	return nil
+}
+
+func tryCatch(baseExperience int) bool {
+	return rand.Intn(int(float32(baseExperience)*0.1)) == 1
 }
 
 func requestLocationAreas(url string, locationAreas *poketypes.LocationAreaSet) error {
