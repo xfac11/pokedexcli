@@ -282,7 +282,7 @@ func commandCatch(c *config, args []string) error {
 		}
 	}
 
-	fmt.Printf("Throwing a Pokeball at %s...", args[0])
+	fmt.Printf("Throwing a Pokeball at %s...\n", args[0])
 	if !tryCatch(pokemon.BaseExperience) {
 		fmt.Printf("%s escaped!\n", args[0])
 		return nil
@@ -293,8 +293,13 @@ func commandCatch(c *config, args []string) error {
 	return nil
 }
 
+// 1xx = 50% 2xx 33% 3xx 25% 4xx 20% and so on
 func tryCatch(baseExperience int) bool {
-	return rand.Intn(int(float32(baseExperience)*0.1)) == 1
+	n := int(float32(baseExperience) * 0.01)
+	if n == 0 {
+		return true
+	}
+	return rand.Intn(n+1) == 0
 }
 
 func requestLocationAreas(url string, locationAreas *poketypes.LocationAreaSet) error {
