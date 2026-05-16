@@ -4,10 +4,10 @@ type Pokemon struct {
 	Id                     int                  `json:"id"`
 	Name                   string               `json:"name"`
 	BaseExperience         int                  `json:"base_experience"`
-	Height                 int                  `json:"height"`
+	Height                 int                  `json:"height"` // in decimetres
 	IsDefault              bool                 `json:"is_default"`
 	Order                  int                  `json:"order"`
-	Weight                 int                  `json:"weight"`
+	Weight                 int                  `json:"weight"` // in hectograms
 	Abilities              []PokemonAbility     `json:"abilities"`
 	Forms                  []NamedAPIResource   `json:"forms"`
 	GameIndices            []VersionGameIndex   `json:"game_indices"`
